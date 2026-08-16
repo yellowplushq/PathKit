@@ -1,13 +1,20 @@
 // PathKit - Effortless path operations
 
-#if os(Linux)
-import Glibc
-
-let system_glob = Glibc.glob
-#else
+// Selected by which C library module is actually available rather than by
+// `os(Linux)`: a musl target is Linux too, and there the module is `Musl`,
+// not `Glibc`.
+#if canImport(Darwin)
 import Darwin
 
 let system_glob = Darwin.glob
+#elseif canImport(Musl)
+import Musl
+
+let system_glob = Musl.glob
+#else
+import Glibc
+
+let system_glob = Glibc.glob
 #endif
 
 import Foundation
@@ -596,12 +603,18 @@ extension Path {
       free(cPattern)
     }
 
-    let flags = GLOB_TILDE | GLOB_BRACE | GLOB_MARK
-    if system_glob(cPattern, flags, nil, &gt) == 0 {
-#if os(Linux)
-      let matchc = gt.gl_pathc
+    // GLOB_BRACE is a GNU extension that musl does not implement, so brace
+    // expansion is unavailable there; the rest of the pattern still globs.
+#if canImport(Musl)
+    let flags = GLOB_TILDE | GLOB_MARK
 #else
+    let flags = GLOB_TILDE | GLOB_BRACE | GLOB_MARK
+#endif
+    if system_glob(cPattern, flags, nil, &gt) == 0 {
+#if canImport(Darwin)
       let matchc = gt.gl_matchc
+#else
+      let matchc = gt.gl_pathc
 #endif
       return (0..<Int(matchc)).compactMap { index in
         if let path = String(validatingUTF8: gt.gl_pathv[index]!) {
